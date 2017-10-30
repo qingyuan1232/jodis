@@ -1,8 +1,8 @@
 /**
  * @(#)RoundRobinJedisPool.java, 2014-11-30.
- * 
+ * <p>
  * Copyright (c) 2014 CodisLabs.
- * 
+ * <p>
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
@@ -10,10 +10,10 @@
  * distribute, sublicense, and/or sell copies of the Software, and to
  * permit persons to whom the Software is furnished to do so, subject to
  * the following conditions:
- * 
+ * <p>
  * The above copyright notice and this permission notice shall be
  * included in all copies or substantial portions of the Software.
- * 
+ * <p>
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -24,17 +24,13 @@
  */
 package io.codis.jodis;
 
-import static org.apache.curator.framework.imps.CuratorFrameworkState.LATENT;
-import static org.apache.curator.framework.recipes.cache.PathChildrenCache.StartMode.BUILD_INITIAL_CACHE;
-import static org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent.Type.CHILD_ADDED;
-import static org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent.Type.CHILD_REMOVED;
-import static org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent.Type.CHILD_UPDATED;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import com.google.common.io.Closeables;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.ChildData;
@@ -43,25 +39,25 @@ import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import com.google.common.io.Closeables;
-
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.Protocol;
 import redis.clients.jedis.exceptions.JedisException;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.apache.curator.framework.imps.CuratorFrameworkState.LATENT;
+import static org.apache.curator.framework.recipes.cache.PathChildrenCache.StartMode.BUILD_INITIAL_CACHE;
+import static org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent.Type.*;
+
 /**
  * A round robin connection pool for connecting multiple codis proxies based on
  * Jedis and Curator.
- * 
+ *
  * @author Apache9
  * @see https://github.com/xetorthio/jedis
  * @see http://curator.apache.org/
@@ -115,8 +111,8 @@ public class RoundRobinJedisPool implements JedisResourcePool {
     private final String clientName;
 
     private RoundRobinJedisPool(CuratorFramework curatorClient, boolean closeCurator,
-            String zkProxyDir, JedisPoolConfig poolConfig, int connectionTimeoutMs, int soTimeoutMs,
-            String password, int database, String clientName) {
+                                String zkProxyDir, JedisPoolConfig poolConfig, int connectionTimeoutMs, int soTimeoutMs,
+                                String password, int database, String clientName) {
         this.poolConfig = poolConfig;
         this.connectionTimeoutMs = connectionTimeoutMs;
         this.soTimeoutMs = soTimeoutMs;
@@ -167,7 +163,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
     private void resetPools() {
         ImmutableList<PooledObject> pools = this.pools;
         Map<String, PooledObject> addr2Pool = Maps.newHashMapWithExpectedSize(pools.size());
-        for (PooledObject pool: pools) {
+        for (PooledObject pool : pools) {
             addr2Pool.put(pool.addr, pool);
         }
         ImmutableList.Builder<PooledObject> builder = ImmutableList.builder();
@@ -195,7 +191,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
             }
         }
         this.pools = builder.build();
-        for (PooledObject pool: addr2Pool.values()) {
+        for (PooledObject pool : addr2Pool.values()) {
             LOG.info("Remove proxy: " + pool.addr);
             pool.pool.close();
         }
@@ -207,7 +203,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
         if (pools.isEmpty()) {
             throw new JedisException("Proxy list empty");
         }
-        for (;;) {
+        for (; ; ) {
             int current = nextIdx.get();
             int next = current >= pools.size() - 1 ? 0 : current + 1;
             if (nextIdx.compareAndSet(current, next)) {
@@ -228,14 +224,14 @@ public class RoundRobinJedisPool implements JedisResourcePool {
         }
         List<PooledObject> pools = this.pools;
         this.pools = ImmutableList.of();
-        for (PooledObject pool: pools) {
+        for (PooledObject pool : pools) {
             pool.pool.close();
         }
     }
 
     /**
      * Create a {@link RoundRobinJedisPool} using the fluent style api.
-     * 
+     *
      * @return
      */
     public static Builder create() {
@@ -245,6 +241,17 @@ public class RoundRobinJedisPool implements JedisResourcePool {
     public static final class Builder {
 
         private CuratorFramework curatorClient;
+
+        /**
+         * 授权类型 eq:digest
+         */
+        private String authenticationType;
+
+        /**
+         * 授权码
+         */
+        private String auth;
+
 
         private boolean closeCurator;
 
@@ -266,11 +273,12 @@ public class RoundRobinJedisPool implements JedisResourcePool {
 
         private String clientName;
 
-        private Builder() {}
+        private Builder() {
+        }
 
         /**
          * Set curator client.
-         * 
+         *
          * @param curatorClient
          *            the client to be used
          * @param closeCurator
@@ -284,7 +292,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
 
         /**
          * Set codis proxy path on zk.
-         * 
+         *
          * @param zkProxyDir
          *            the codis proxy dir on ZooKeeper. e.g.,
          *            "/zk/codis/db_xxx/proxy"
@@ -299,7 +307,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
          * <p>
          * We will create curator client based on these parameters and close it
          * while closing pool.
-         * 
+         *
          * @param zkAddr
          *            ZooKeeper connect string. e.g., "zk1:2181"
          * @param zkSessionTimeoutMs
@@ -308,6 +316,28 @@ public class RoundRobinJedisPool implements JedisResourcePool {
         public Builder curatorClient(String zkAddr, int zkSessionTimeoutMs) {
             this.zkAddr = zkAddr;
             this.zkSessionTimeoutMs = zkSessionTimeoutMs;
+            return this;
+        }
+
+        /**
+         * Set authentication type
+         * 如果当前zk节点需要认证才能操作，则需要传入认证类型和认证密钥进行操作
+         * @param authenticationType
+         * @return
+         */
+        public Builder authenticationType(String authenticationType) {
+            this.authenticationType = authenticationType;
+            return this;
+        }
+
+        /**
+         * Set auth
+         * 如果当前zk节点需要认证才能操作，则需要传入认证类型和认证密钥进行操作
+         * @param auth
+         * @return
+         */
+        public Builder auth(String auth) {
+            this.auth = auth;
             return this;
         }
 
@@ -323,7 +353,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
          * Set jedis pool timeout in milliseconds.
          * <p>
          * We will set connectionTimeoutMs and soTimeoutMs both.
-         * 
+         *
          * @param timeoutMs
          *            timeout is milliseconds
          */
@@ -334,7 +364,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
 
         /**
          * Set jedis pool connection timeout in milliseconds.
-         * 
+         *
          * @param connectionTimeoutMs
          *            timeout is milliseconds
          */
@@ -345,7 +375,7 @@ public class RoundRobinJedisPool implements JedisResourcePool {
 
         /**
          * Set jedis pool connection soTimeout in milliseconds.
-         * 
+         *
          * @param soTimeoutMs
          *            timeout is milliseconds
          */
@@ -382,11 +412,17 @@ public class RoundRobinJedisPool implements JedisResourcePool {
             Preconditions.checkNotNull(zkProxyDir, "zkProxyDir can not be null");
             if (curatorClient == null) {
                 Preconditions.checkNotNull(zkAddr, "zk client can not be null");
-                curatorClient = CuratorFrameworkFactory.builder().connectString(zkAddr)
+                CuratorFrameworkFactory.Builder factoryBuilder = CuratorFrameworkFactory.builder().connectString(zkAddr)
                         .sessionTimeoutMs(zkSessionTimeoutMs)
                         .retryPolicy(new BoundedExponentialBackoffRetryUntilElapsed(
-                                CURATOR_RETRY_BASE_SLEEP_MS, CURATOR_RETRY_MAX_SLEEP_MS, -1L))
-                        .build();
+                                CURATOR_RETRY_BASE_SLEEP_MS, CURATOR_RETRY_MAX_SLEEP_MS, -1L));
+                /**
+                 * 认证
+                 */
+                if (authenticationType != null && auth != null) {
+                    factoryBuilder.authorization(authenticationType, auth.getBytes());
+                }
+                curatorClient = factoryBuilder.build();
                 curatorClient.start();
                 closeCurator = true;
             } else {
