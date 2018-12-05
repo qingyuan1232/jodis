@@ -1,20 +1,20 @@
-#Jodis - Java client for codis
+# Jodis - Java client for codis
 
 [![Build Status](https://travis-ci.org/CodisLabs/jodis.svg)](https://travis-ci.org/CodisLabs/jodis)
 
 Jodis is a java client for codis based on [Jedis](https://github.com/xetorthio/jedis) and [Curator](http://curator.apache.org/).
 
-##Features
+# Features
 - Use a round robin policy to balance load to multiple codis proxies.
 - Detect proxy online and offline automatically.
 
-##How to use
+# How to use
 Add this to your pom.xml. We deploy jodis to https://oss.sonatype.org.
 ```xml
 <dependency>
   <groupId>io.codis.jodis</groupId>
   <artifactId>jodis</artifactId>
-  <version>0.4.1</version>
+  <version>0.5.1</version>
 </dependency>
 ```
 To use it for Codis2.x:
@@ -37,4 +37,4 @@ try (Jedis jedis = jedisPool.getResource()) {
     System.out.println(value);
 }
 ```
-Note: JDK7 is required to build and use jodis. If you want to use jodis with JDK6, you can copy the source files to your project, replace ThreadLocalRandom in BoundedExponentialBackoffRetryUntilElapsed and JDK7 specified grammar(maybe, not sure) , and then compile with JDK6.
+Note: JDK8 is required to use and build jodis, as JDK7 has been EOL since May 2015.
